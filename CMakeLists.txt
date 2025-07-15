@@ -1,81 +1,83 @@
-cmake_minimum_required(VERSION 2.8.3)
-project(serial)
+cmake_minimum_required(VERSION 3.8)        # ROS 2 uses CMake ≥ 3.8
+project(serial LANGUAGES CXX)
 
-# Find catkin
-find_package(catkin REQUIRED)
+###############################################################################
+# 1. Dependencies
+###############################################################################
+find_package(ament_cmake REQUIRED)
 
+# Extra system libs depending on platform
 if(APPLE)
-    find_library(IOKIT_LIBRARY IOKit)
-    find_library(FOUNDATION_LIBRARY Foundation)
+  find_library(IOKIT_LIBRARY      IOKit)
+  find_library(FOUNDATION_LIBRARY Foundation)
+elseif(UNIX AND NOT APPLE)
+  set(rt_LIBRARIES       rt)
+  set(pthread_LIBRARIES  pthread)
 endif()
 
-if(UNIX AND NOT APPLE)
-    # If Linux, add rt and pthread
-    set(rt_LIBRARIES rt)
-    set(pthread_LIBRARIES pthread)
-    catkin_package(
-        LIBRARIES ${PROJECT_NAME}
-        INCLUDE_DIRS include
-        DEPENDS rt pthread
-    )
-else()
-    # Otherwise normal call
-    catkin_package(
-        LIBRARIES ${PROJECT_NAME}
-        INCLUDE_DIRS include
-    )
-endif()
-
-## Sources
+###############################################################################
+# 2. Source files
+###############################################################################
 set(serial_SRCS
-    src/serial.cc
-    include/serial/serial.h
-    include/serial/v8stdint.h
+  src/serial.cc
+  include/serial/serial.h
+  include/serial/v8stdint.h
 )
+
 if(APPLE)
-    # If OSX
-    list(APPEND serial_SRCS src/impl/unix.cc)
-    list(APPEND serial_SRCS src/impl/list_ports/list_ports_osx.cc)
+  list(APPEND serial_SRCS
+       src/impl/unix.cc
+       src/impl/list_ports/list_ports_osx.cc)
 elseif(UNIX)
-    # If unix
-    list(APPEND serial_SRCS src/impl/unix.cc)
-    list(APPEND serial_SRCS src/impl/list_ports/list_ports_linux.cc)
-else()
-    # If windows
-    list(APPEND serial_SRCS src/impl/win.cc)
-    list(APPEND serial_SRCS src/impl/list_ports/list_ports_win.cc)
+  list(APPEND serial_SRCS
+       src/impl/unix.cc
+       src/impl/list_ports/list_ports_linux.cc)
+else()  # Windows
+  list(APPEND serial_SRCS
+       src/impl/win.cc
+       src/impl/list_ports/list_ports_win.cc)
 endif()
 
-## Add serial library
-add_library(${PROJECT_NAME} ${serial_SRCS})
+###############################################################################
+# 3. Build the shared library
+###############################################################################
+add_library(${PROJECT_NAME} SHARED ${serial_SRCS})
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
+
 if(APPLE)
-    target_link_libraries(${PROJECT_NAME} ${FOUNDATION_LIBRARY} ${IOKIT_LIBRARY})
-elseif(UNIX)
-    target_link_libraries(${PROJECT_NAME} rt pthread)
+  target_link_libraries(${PROJECT_NAME} PUBLIC ${FOUNDATION_LIBRARY} ${IOKIT_LIBRARY})
+elseif(UNIX AND NOT APPLE)
+  target_link_libraries(${PROJECT_NAME} PUBLIC rt pthread)
 else()
-    target_link_libraries(${PROJECT_NAME} setupapi)
+  target_link_libraries(${PROJECT_NAME} PUBLIC setupapi)
 endif()
 
-## Uncomment for example
-add_executable(serial_example examples/serial_example.cc)
-add_dependencies(serial_example ${PROJECT_NAME})
-target_link_libraries(serial_example ${PROJECT_NAME})
+###############################################################################
+# 4. (Optional) example executable
+###############################################################################
+# add_executable(serial_example examples/serial_example.cc)
+# target_link_libraries(serial_example PRIVATE ${PROJECT_NAME})
 
-## Include headers
-include_directories(include)
-
-## Install executable
+###############################################################################
+# 5. Installation
+###############################################################################
 install(TARGETS ${PROJECT_NAME}
-    ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-    RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
-)
+  EXPORT  export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
 
-## Install headers
-install(FILES include/serial/serial.h include/serial/v8stdint.h
-  DESTINATION ${CATKIN_GLOBAL_INCLUDE_DESTINATION}/serial)
+install(DIRECTORY include/ DESTINATION include)
 
-## Tests
-if(CATKIN_ENABLE_TESTING)
-    add_subdirectory(tests)
-endif()
+###############################################################################
+# 6. ament export & package
+###############################################################################
+ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
+ament_export_include_directories(include)
+ament_export_libraries(${PROJECT_NAME})
+
+ament_package()
+
